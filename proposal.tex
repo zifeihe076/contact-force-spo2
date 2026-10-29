@@ -1,0 +1,117 @@
+\documentclass[10pt]{article}
+\usepackage[utf8]{inputenc}
+\usepackage{url}
+\usepackage{hyperref}
+\usepackage{amsmath,amsfonts,amssymb}
+\usepackage{graphicx,float,multicol,xcolor}
+\usepackage[numbers]{natbib}
+\usepackage[font=small]{caption}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,positioning}
+\addtolength{\abovecaptionskip}{-3mm}
+\addtolength{\textfloatsep}{-5mm}
+\setlength\columnsep{20pt}
+\usepackage[a4paper,left=1.50cm,right=1.50cm,top=1.50cm,bottom=1.50cm]{geometry}
+\hypersetup{hidelinks}
+\begin{document}
+\begin{center}
+{\Large\textbf{Causal Mechanism Guided Contact Force Correction\\for Robust Reflective SpO\textsubscript{2} Estimation}}\\
+\vspace{1em}
+{\large Zifei He}\\
+\vspace{1em}
+\textit{Department of Electrical and Computer Engineering, Rutgers University--New Brunswick}
+\end{center}
+\begin{center}\rule{150mm}{0.2mm}\end{center}
+\begin{abstract}
+Contact force changes reflective photoplethysmography (PPG) and can bias estimates of peripheral oxygen saturation (SpO$_2$). Building on previous experiments and collected data, this project will develop a model that corrects the dual-wavelength ratio according to the known measurement mechanism. Tests on unseen subjects and force conditions will compare this approach with direct feature fusion. Separate checks of input quality and model applicability will determine whether to report an estimate or request a new measurement. Reproducible CPU experiments will evaluate both estimation accuracy and responses to sensor failures.
+\end{abstract}
+\begin{center}\rule{150mm}{0.2mm}\end{center}
+\vspace{5mm}
+\begin{multicols*}{2}
+\section{Problem and research question}
+Contact force changes optical coupling and local perfusion, altering the alternating-current (AC) and direct-current (DC) components of red and infrared PPG and their ratio \cite{teng,sirkia}. This can shift SpO$_2$ estimates despite approximately stable systemic oxygenation. \textit{Can force correction along this measurement pathway reduce estimation error and force-dependent bias more effectively than direct feature fusion?} The system will report an estimate only when the input signals and measurement conditions satisfy predefined acceptance criteria; otherwise, it will request a new measurement.
+
+\section{Prior work and contribution}
+Existing experiments demonstrate force-dependent AC/DC changes and wavelength-specific responses \cite{teng,sirkia}. My published work established controlled acquisition and analyzed force effects on signal quality and SpO$_2$ prediction \cite{he}. These completed experiments and the collected data provide the project foundation. Physical analysis in my thesis informs the proposed design \cite{thesis}.
+
+The proposed model will use contact force to correct the PPG ratio, convert the corrected ratio to SpO$_2$ through a decreasing mapping, and compensate for remaining error with a limited residual adjustment. The project will evaluate this structure across subjects and force conditions and test when unreliable inputs should prevent reporting. Model development, validation, and failure experiments are planned work.
+
+\section{Technical approach}
+\textbf{Data.} The accessible, course-permitted CF-controlled dataset contains 1,620 five-second red/infrared PPG segments from nine subjects (250 Hz), segment-level force (0.2--3.0 N), and reference SpO$_2$ (95--97\%). Labels are used only for training and evaluation. Locally available WF-PPG \cite{ho} provides wrist PPG, pressure, and SpO$_2$; external tests require unit and label compatibility checks. The narrow reference range limits conclusions to normal oxygenation.
+
+\begin{samepage}
+\textbf{Causal model.} The proposed measurement pathway is:
+\begin{center}
+\begin{tikzpicture}[>=Stealth,node distance=0.55cm and 0.5cm,every node/.style={font=\small}]
+\node (f) {$F$}; \node[right=of f] (m) {$M$};
+\node[right=of m] (a) {AC, DC}; \node[right=of a] (r) {$R$};
+\node[right=of r] (h) {$\hat S$}; \node[above=of a] (s) {$S$};
+\node[below=of m] (u) {$U$};
+\draw[->] (f)--(m); \draw[->] (m)--(a); \draw[->] (a)--(r);
+\draw[->] (r)--(h); \draw[->] (s)--(a); \draw[->] (u)--(m); \draw[->] (u)--(a);
+\end{tikzpicture}
+\end{center}
+\end{samepage}
+Here $F$ is contact force, $M$ optical coupling/local perfusion, $S$ systemic oxygenation, and $U$ tissue properties. The model assumes local force mainly changes the measurement process while $S$ remains approximately stable. Sequential loading limits separation of force effects from time and cumulative compression.
+
+\textbf{Estimation.} Red and infrared AC/DC components form the ratio $R=(AC_{\rm red}/DC_{\rm red})/(AC_{\rm ir}/DC_{\rm ir})$. A small neural network uses force to correct this ratio before blood-oxygen estimation:
+\begin{align}
+R_c&=R+f_\theta(R,F),\\
+\hat S&=\operatorname{clip}\bigl(g(R_c)+\Delta,90,100\bigr).
+\end{align}
+The mapping $g$ makes estimated SpO$_2$ decrease as the corrected ratio increases, following the physical relationship. A residual term $\Delta$, limited to $\pm2$ percentage points, uses PPG features to compensate for remaining error. Huber loss compares both $g(R_c)$ and the final estimate with reference SpO$_2$. The 90--100\% output range reflects the current dataset. The corrected ratio is a learned feature, rather than a directly measured physiological quantity.
+
+\textbf{Input quality and model applicability.} Input-quality checks examine missing samples, timestamp alignment, invalid values, and clipping in the two PPG channels and force signal. Independent applicability checks confirm the model matches its recorded version, the input lies within the validated force and feature ranges, and the output satisfies the specified constraints. Acceptance thresholds are determined using training and validation data. Input validity and estimate applicability are recorded as separate claims, assigned low and moderate research-risk levels, and linked to their source measurements.
+
+An estimate is reported only if both sets of checks pass and its source records are available. Any failed or inconclusive check withholds the estimate. The system may restore an unchanged source record or select another synchronized valid segment, then repeat both checks; otherwise, it requests a new measurement. A JSON record will store the source identifiers, claims, check results, reporting decision, and recovery attempt, using the evidence and decision formats introduced in A1--A3. The system is intended for research evaluation, not clinical diagnosis.
+
+\section{Evaluation}
+The main hypothesis is that ratio correction reduces estimation error and its dependence on force compared with direct feature fusion. Baselines include the training-label mean, ridge regression, a PPG-only neural regressor, and a PPG-plus-force regressor with comparable parameter count. Ablations remove ratio correction, residual compensation, or supervision of the physical output. Leave-one-subject-out testing uses separate validation subjects and training-only normalization. Additional tests exclude selected force intervals from training to assess interpolation and extrapolation. Models share data partitions and tuning budgets.
+
+Constant-label folds will be flagged because correlation is undefined. Evaluation will report mean absolute error, root mean squared error, variation in signed error across force levels at comparable reference SpO$_2$, predicted-to-reference standard-deviation ratio, Spearman correlation, and Bland--Altman limits-of-agreement width. Paired subject results and three random seeds will assess consistency. No advantage over direct fusion, no effect of removing correction, or nearly constant predictions would weaken the proposed explanation.
+
+Failure experiments will remove force readings, simulate misalignment, clip or swap PPG channels, introduce force outside the validated range, alter model files, and interrupt verification. The segmented export lacks raw force timestamps; timing faults will therefore test software using synthetic metadata. Reporting behavior will be assessed separately through the fraction of estimates reported, incorrect acceptance of invalid inputs, unnecessary withholding on valid inputs, completion of required checks, fault detection, and successful restoration. Offline error above 1 percentage point is a research evaluation criterion, not a clinical threshold. Error will also be compared at matched reporting rates and on the same signal segments to distinguish improved estimation from simply rejecting more data.
+
+\section{Feasibility and milestones}
+The project is feasible because the required data have already been collected and are accessible for course use. The modest dataset size, low-dimensional PPG features, and lightweight correction network make CPU-based training and evaluation practical. Subject-disjoint validation, early stopping, and simple regression baselines will address the risk of overfitting with limited data. On four CPU cores with 16 GB RAM, estimated baseline runtime is 1--3 h and evaluation under 1 h, with peak memory below 8 GB. These estimates will be verified against the course limits. A small end-to-end test targets 5 min. Proposed quick-test and full CPU configurations accompany the draft; no GPU, paid API, or network connection after setup is required.
+
+Zifei He will implement and evaluate the project. By Nov.\ 13, audit data and implement baselines; by Dec.\ 1, demonstrate the CPU pipeline, both verification procedures, JSON records, deliberate faults and recovery, and measured runtime/memory; by Dec.\ 11, complete ablations and the poster; by Dec.\ 15, submit the report, reproducibility appendix, tests, fixed software dependencies, resource measurements, and repeatable saved-data runs. If computation exceeds budget, reduce tuning and use ridge regression while retaining verification. Compatible public data provide a sharing fallback; synthetic data test software only. \textbf{Optional scale-up.} None requested.
+
+\noindent Repository: \url{https://github.com/zifeihe076/contact-force-spo2}.
+
+\begin{thebibliography}{9}
+\raggedright
+\bibitem{teng}
+X. F. Teng and Y. T. Zhang.
+The effect of contacting force on photoplethysmographic signals.
+\textit{Physiological Measurement}, 25(5):1323--1335, 2004.
+\textit{Supports the force-to-AC/DC pathway; responses depend on measurement site.}
+
+\bibitem{sirkia}
+J.-P. Sirkiä, T. Panula, and M. Kaisti.
+Investigating the impact of contact pressure on photoplethysmograms.
+\textit{Biomedical Engineering Advances}, 7:100123, 2024.
+\textit{Connects pressure-dependent optical responses to ratio and SpO$_2$ changes.}
+
+\bibitem{he}
+Z. He et al.
+A Preliminary Quantitative Analysis of Contact Force Effects on Peripheral Oxygen Saturation Prediction from Reflectance Photoplethysmography.
+\textit{IEEE Sensors Journal}, 2026, online.
+\textit{My completed experiments provide the acquisition and influence-analysis foundation.}
+
+\bibitem{ho}
+M. Y. Ho, H. M. Pham, A. Saeed, and D. Ma.
+WF-PPG: A Wrist-finger Dual-Channel Dataset for Studying the Impact of Contact Pressure on PPG Morphology.
+\textit{Scientific Data}, 12:200, 2025.
+\textit{Offers potential external validation, subject to signal and label compatibility.}
+
+\bibitem{thesis}
+Z. He.
+Research on the Influence Analysis and Correction Strategies of Contact Force in Reflectance Photoplethysmography-based Blood Oxygen Saturation Monitoring.
+Master's thesis, Southeast University, 2026. Author-provided manuscript.
+\textit{Physical analysis informs the design; model implementation and evaluation remain planned work.}
+\end{thebibliography}
+\end{multicols*}
+
+\end{document}
+
