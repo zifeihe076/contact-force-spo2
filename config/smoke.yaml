@@ -1,0 +1,84 @@
+# Proposed configuration contract; runtime and CLI implementation are planned.
+schema_version: 1
+status: proposed
+experiment:
+  name: causal_ppg_smoke
+  device: cpu
+  seeds: [2026]
+  offline_after_setup: true
+  threads: 4
+data:
+  mode: cached_replay
+  available_source: private_cf_controlled_mat_export
+  source_record_count: 1620
+  source_subject_count: 9
+  source_segment_samples: 1250
+  source_reference_spo2_range: [95, 97]
+  force_resolution: segment_level
+  timing_fault_metadata: synthetic_not_raw_alignment_evidence
+  manifest: data/replay/smoke_manifest.json
+  access: author_confirmed_course_use
+  required_evidence: [ppg_red, ppg_ir, contact_force]
+  reference_label: spo2_reference
+  reference_at_inference: false
+  max_records: 64
+  split: subject_disjoint_smoke
+  minimum_subjects: 3
+  require_all_partitions_nonempty: true
+  label_alignment: native_reference_support
+  force_unit: N
+  fit_preprocessing_on: training_only
+model:
+  type: ratio_correction_mlp
+  hidden_sizes: [64, 64]
+  residual_inputs: [ac_red, dc_red, ac_ir, dc_ir, ratio]
+  force_enters: ratio_correction_only
+  physical_head: decreasing_sigmoid
+  residual_limit_percentage_points: 2.0
+  output_bounds_percentage_points: [90.0, 100.0]
+  output_bounds_scope: current_static_dataset_only
+training:
+  epochs: 2
+  batch_size: 32
+  learning_rate: 0.001
+  loss: huber
+  physical_branch_weight: 0.25
+verification:
+  threshold_manifest: data/replay/calibration_manifest.json
+  thresholds_must_be_frozen: true
+  absent_calibration: unknown
+  checkers:
+    evidence_integrity:
+      tests: [required_channels, finite_values, source_hashes, timestamp_alignment, units, clipping_missingness]
+    model_applicability:
+      tests: [model_manifest_hash, force_feature_support, calibration_available, output_residual_validity]
+  independent_results: true
+gate:
+  release_if: all_checkers_pass_and_provenance_complete
+  on_unknown_or_exception: defer
+  invariant: release_implies_two_passes_and_complete_provenance
+repair:
+  allowed: [restore_verified_cached_record, select_existing_valid_synchronized_window]
+  max_attempts: 1
+  recheck_both: true
+  unresolved_action: request_reacquisition
+failure_injection:
+  cases: [force_dropout, timestamp_offset, red_ir_swap, clipping, force_shift, model_hash_tamper, checker_exception]
+  expected_dispositions: experiments/expected_failures.json
+evaluation:
+  purpose: pipeline_and_gate_only_not_scientific_efficacy
+  unsafe_error_tolerance_percentage_points: 1.0
+  tolerance_scope: research_only
+  report_task_and_policy_separately: true
+resources:
+  wall_time_target_minutes: 5
+  cpu_cores_max: 4
+  memory_limit_gib: 16
+  estimated_peak_memory_gib: 2
+  estimates_are_measured: false
+outputs:
+  directory: experiments/smoke
+  receipt: experiments/receipt.json
+  compute: experiments/compute.json
+  trace: experiments/smoke/trace.jsonl
+  require_relative_paths_and_hashes: true
